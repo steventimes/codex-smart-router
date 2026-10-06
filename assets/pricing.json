@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "currency": "USD",
+  "source": "User-supplied API price catalog; no bundled prices are assumed",
+  "effectiveDate": null,
+  "serviceTier": "unspecified",
+  "models": {}
+}

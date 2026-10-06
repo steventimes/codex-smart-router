@@ -1,24 +1,26 @@
 {
   "name": "codex-smart-router",
-  "version": "0.1.0",
-  "description": "Semantic LLM-based per-turn model and reasoning router for Codex CLI",
+  "version": "0.2.0",
+  "description": "Catalog-driven model and reasoning router for the native Codex App Server",
   "type": "module",
   "files": [
     "bin/",
     "src/",
     "assets/route-schema.json",
+    "assets/pricing.json",
+    "assets/benchmark/",
+    "docs/MIGRATION.md",
     "README.md",
     "PUBLIC_DOCUMENTATION.md",
-    "CHANGELOG.md",
-    "LAUNCH_POST.md"
+    "CHANGELOG.md"
   ],
   "bin": {
     "codex-smart": "bin/codex-smart.mjs"
   },
   "scripts": {
-    "test": "node --test test/router.test.mjs test/classifier.test.mjs test/proxy.test.mjs test/audit.test.mjs test/dashboard.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "test:integration": "node --test test/app-server.integration.test.mjs",
-    "check": "node --check bin/codex-smart.mjs && node --check scripts/record-readme-demo.mjs && node --check src/router.mjs && node --check src/classifier.mjs && node --check src/catalog.mjs && node --check src/proxy.mjs && node --check src/audit.mjs && node --check src/dashboard.mjs && node --check src/dashboard-server.mjs"
+    "check": "node --check bin/codex-smart.mjs && node --check scripts/record-readme-demo.mjs && node --check src/*.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -29,10 +31,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/giovannimirarchi420/codex-smart-router.git"
+    "url": "git+https://github.com/steventimes/codex-smart-router.git"
   },
   "bugs": {
-    "url": "https://github.com/giovannimirarchi420/codex-smart-router/issues"
+    "url": "https://github.com/steventimes/codex-smart-router/issues"
   },
-  "homepage": "https://github.com/giovannimirarchi420/codex-smart-router#readme"
+  "homepage": "https://github.com/steventimes/codex-smart-router#readme"
 }

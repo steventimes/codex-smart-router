@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { WebSocket } from "ws";
-import { loadCodexCatalog } from "../src/catalog.mjs";
 import { startProxy } from "../src/proxy.mjs";
+
+const LIVE = process.env.CODEX_SMART_LIVE_INTEGRATION === '1';
 
 function waitForOpen(socket) {
   return new Promise((resolve, reject) => {
@@ -32,9 +33,10 @@ function waitForResponse(socket, id, timeoutMs = 10_000) {
   });
 }
 
-test("proxies a real Codex App Server handshake and ephemeral thread", async () => {
-  const catalog = loadCodexCatalog();
-  const proxy = await startProxy({ catalog, audit: false });
+test("proxies a real Codex App Server handshake and ephemeral thread", {
+  skip: LIVE ? false : 'set CODEX_SMART_LIVE_INTEGRATION=1 to use the local Codex account (no model turn is submitted)',
+}, async () => {
+  const proxy = await startProxy({ audit: false });
   const socket = new WebSocket(proxy.url, {
     headers: { authorization: `Bearer ${proxy.authToken}` },
   });

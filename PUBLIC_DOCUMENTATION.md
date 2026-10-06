@@ -1,135 +1,74 @@
-# Codex Smart Router
+# Architecture and operating contract
 
-Codex Smart Router is a semantic control layer for Codex CLI. Before each turn, a low-cost classifier model understands the requested work and selects the execution model and reasoning effort most likely to complete it correctly.
+Codex Smart Router is a loopback WebSocket proxy in front of the native Codex App Server. It does not replace Codex execution.
 
-It is not a replacement chatbot or a generic model gateway. It preserves Codex authentication, the native TUI, tools, approvals, skills, plugins, and conversation history.
+## Runtime path
 
-## Why It Matters
+1. The TUI initializes one App Server connection.
+2. The proxy uses a private RPC ID namespace to consume every paginated `model/list` response on that initialized connection.
+3. The router builds a bounded set of advertised, visible, modality-compatible `model × effort` pairs. Effort names are open strings; unsupported values are never synthesized.
+4. A schema-validated classifier selects an opaque candidate ID or abstains.
+5. Explicit turn, session pin, CLI pin, policy evidence, confidence/risk, and baseline rules produce the final legal pair.
+6. The proxy patches `turn/start`; Codex retains auth, sandbox, approvals, tools, and state.
+7. Protocol, usage, validation, retry, and scope evidence are correlated by decision/task/thread/turn/attempt IDs.
 
-The most expensive routing mistake is not choosing a larger model. It is choosing the wrong model, then paying for a failed attempt, a correction prompt, and another full agent turn.
+Catalog membership is not entitlement proof. A pre-execution model rejection refreshes the catalog and may fall back once, only before acceptance, stream output, or a tool side effect. Rate limits, timeouts with unknown state, and accepted turns are not replayed.
 
-Codex Smart Router evaluates semantic difficulty rather than prompt length. A short request such as “debug the production token race” can be harder than a long formatting specification. A follow-up such as “continue” is classified with recent conversation context rather than treated as an isolated one-word prompt.
+## Configuration
 
-## How It Works
+Example router JSON:
 
-```mermaid
-flowchart LR
-  U[User prompt] --> P[Authenticated local proxy]
-  P --> D{Explicit override?}
-  D -->|yes| O[Use requested tier or model]
-  D -->|no| C[Low-cost semantic classifier]
-  C --> J[Strict JSON decision]
-  J --> T[Resolve tier against live Codex catalog]
-  O --> E[Patch model and effort on turn/start]
-  T --> E
-  E --> A[Codex App Server]
-  A --> M[Selected execution model]
+```json
+{
+  "configVersion": 2,
+  "maxCandidates": 8,
+  "confidenceThreshold": 0.6,
+  "automaticEfforts": ["low", "medium", "high", "xhigh"],
+  "automaticHighModes": [],
+  "allowlist": ["gpt-6.1-sol", "gpt-6-luna"],
+  "modelProfiles": {
+    "gpt-6.1-sol": { "quality": 1, "relativeCost": 1 },
+    "gpt-6-luna": { "quality": 0.7, "relativeCost": 0.4 }
+  },
+  "benchmarkStrategies": {
+    "baseline": { "model": "gpt-6.1-sol", "effort": "medium" },
+    "joint": { "model": "gpt-6.1-sol", "effort": "high" }
+  }
+}
 ```
 
-The classifier receives the current prompt, up to six recent user prompts, the previous route and status, previous token usage, and image presence. It returns:
+Profiles and “cheap” labels are user-supplied policy priors; the router does not infer price or quality from model names. `max` and `ultra` are excluded from automatic candidates unless listed in `automaticHighModes`.
 
-- execution tier
-- confidence
-- task type
-- concise rationale
-
-There are no keyword weights, prompt-length thresholds, or hidden heuristic fallbacks.
-
-## Classifier Options
-
-```mermaid
-flowchart TB
-  A[auto classifier mode] --> K{OPENAI_API_KEY set?}
-  K -->|yes| N[gpt-5.4-nano via Responses API]
-  K -->|no| C[gpt-5.4-mini low via Codex auth]
-  N --> R[Structured route decision]
-  C --> R
-```
-
-`gpt-5.4-nano` is the recommended classifier because it is designed for classification, supports strict structured output, and avoids loading a complete Codex agent runtime. The native fallback needs no separate API key, but it carries more input-token and latency overhead.
-
-## Execution Tiers
-
-| Tier | Default route | Intended work |
-| --- | --- | --- |
-| `economy` | `gpt-5.4-mini` + `low` | conversation, lookups, transformations, tiny edits |
-| `balanced` | `gpt-5.6-luna` + `low` | focused implementation and straightforward debugging |
-| `complex` | `gpt-5.6-terra` + `medium` | repository analysis, infrastructure, multi-file work, hard debugging |
-| `frontier` | `gpt-5.6-sol` + `high` | architecture, deep research, security, production-critical work |
-| `max` | `gpt-5.6-sol` + `max` | explicit escalation only |
-
-The installed Codex model catalog remains authoritative. Model availability changes do not require hard-coded assumptions in the proxy.
-
-## Runtime Architecture
-
-```mermaid
-sequenceDiagram
-  participant U as User
-  participant C as codex-smart
-  participant R as Classifier model
-  participant A as Codex App Server
-  participant M as Execution model
-
-  U->>C: Submit prompt
-  C->>R: Prompt + recent conversation context
-  R->>C: tier, confidence, task type, rationale
-  C->>A: Patched turn/start with model + effort
-  A->>M: Execute Codex turn
-  M->>A: Stream result
-  A->>C: Output + token usage
-  C->>U: Native Codex experience
-```
-
-## Controls
-
-Start semantic routing:
+Live benchmark example (this can consume subscription/API resources):
 
 ```bash
-codex-smart
+node bin/codex-smart.mjs benchmark run --live --config router.json \
+  --max-tasks 2 --max-attempts 4 --max-tokens 20000 --timeout 120000 \
+  --output live-report.json
 ```
 
-Choose a classifier backend:
+`--repair` allows at most one validation-linked repair. Verifiers remain outside model-writable workspaces. Dollar budgets are refused unless the provider has reliable pricing evidence; cancellation may be delayed.
 
-```bash
-codex-smart --classifier openai
-codex-smart --classifier codex
-```
+## Result and cost semantics
 
-Inspect one decision without running the task:
+- `completed`: App Server finished the protocol turn.
+- `unknown`: no correctness verifier ran.
+- `passed`: explicit trusted validation passed.
+- `failed/logic`: capability label eligible for policy fitting.
+- infrastructure, permission, timeout, cancellation, unavailable model, and validator tampering: operational evidence, not a model-quality failure.
 
-```bash
-codex-smart route "Create the Helm chart for this project"
-```
+Usage with incomplete attribution remains `null`. Retries are separate attempts under one task. Cached input is included in input tokens; reasoning tokens are included in output tokens. The dashboard reports price coverage and known subtotals without converting them into subscription savings.
 
-Bypass classification for one turn:
+## Classifier boundaries
 
-```text
-::route frontier
-Review the authentication design.
-```
+`auto` and `codex` use an ephemeral, read-only native Codex classifier on a legal catalog pair. `openai` is an explicit paid API destination. `http` targets an explicit OpenAI-compatible endpoint and supports Responses or Chat Completions. No backend silently falls through to a different destination.
 
-## Evidence, Not Assumptions
+The HTTP classifier receives the current bounded prompt, up to six bounded history items, metadata-only repository summary, prior structured outcome, and candidate metadata. API keys, OAuth credentials, raw tools, and audit logs are not sent.
 
-The audit log stores no prompts or classifier rationales. It records classifier model, confidence, latency and token usage alongside the selected Codex model and the execution turn’s actual token usage.
+## Offline policy
 
-```bash
-codex-smart stats
-codex-smart dashboard
-```
+`policy fit` reads explicit anonymous exports, makes deterministic repository/task/month group splits, and stores per-bucket/per-combination counts, mean tokens/time, smoothed rates, and Wilson intervals. Online use requires enough samples, a known feature bucket, a legal candidate, and a matching catalog fingerprint. No online hot-training or random exploration occurs.
 
-This makes the optimization falsifiable: classifier overhead can be compared directly with the execution tokens it saves.
+## Compatibility
 
-The dashboard is a local browser page bound to `127.0.0.1`. It shows model and tier distribution, 30-day token trend, routing coverage, classifier overhead, and estimated savings against `gpt-5.5` by default. It uses documented standard API prices for known GPT models and requires an explicit price mapping for unknown catalog models, so it does not guess billing data.
-
-## Privacy And Safety
-
-- The local proxy binds to `127.0.0.1` and requires a per-process bearer token.
-- Classifier output must satisfy a strict JSON schema.
-- Prompt content is explicitly treated as untrusted classifier data.
-- Audit records omit prompt text and classifier rationale.
-- The router never edits Codex configuration files.
-- API classification sends recent user prompts to the configured OpenAI endpoint; native classification uses an ephemeral Codex session.
-
-## Bottom Line
-
-Codex Smart Router gives every prompt the model it deserves, based on what the work means rather than how many words describe it. Small requests stay economical, demanding work receives stronger reasoning, and every decision is measurable.
+App Server protocol and model catalogs vary by Codex version. `doctor` checks the installed binary and discovered combinations without running inference. Current-model documentation can describe newer capabilities than an older binary, so runtime schema/catalog evidence wins. See [docs/MIGRATION.md](docs/MIGRATION.md).
